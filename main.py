@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta
 import pandas as pd
 from pytz import timezone
-from models import StoreStatus, StoreWorkingHours, StoreTime, session
+from models import StoreStatus, StoreWorkingHours, StoreTime, session, engine
 import os
 import pathos.multiprocessing as mp
 
@@ -36,15 +36,19 @@ def generate_report(current_timestamp):
       pd.DataFrame: A DataFrame containing the report data.
   """
 
-  # Fetch data from database
-  store_statuses = session.query(StoreStatus).all()
-  store_hours = session.query(StoreWorkingHours).all()
-  store_timezones = session.query(StoreTime).all()
+  query_statuses = 'SELECT store_id, timestamp_utc, status FROM store_status'
+  query_hours = 'SELECT store_id, day as dayOfWeek, start_time_local, end_time_local FROM store_working_hours'
+  query_timezones = 'SELECT store_id, timezone_str FROM store_timezone'
 
-  # Convert data to Pandas DataFrames
-  df_statuses = pd.DataFrame([(s.store_id, parse_timestamp(s.timestamp_utc) , s.status) for s in store_statuses], columns=['store_id', 'timestamp_utc', 'status'])
-  df_hours = pd.DataFrame([(h.store_id, h.day, parse_timestamp(h.start_time_local), parse_timestamp(h.end_time_local)) for h in store_hours], columns=['store_id', 'dayOfWeek', 'start_time_local', 'end_time_local'])
-  df_timezones = pd.DataFrame([(t.store_id, t.timezone_str) for t in store_timezones], columns=['store_id', 'timezone_str'])
+  # Use pandas to query the database and store the results in DataFrames
+  df_statuses = pd.read_sql(query_statuses, con=engine)
+  df_hours = pd.read_sql(query_hours, con=engine)
+  df_timezones = pd.read_sql(query_timezones, con=engine)
+
+  df_statuses['timestamp_utc'] = df_statuses['timestamp_utc'].apply(lambda x: parse_timestamp(x))
+  df_hours['start_time_local'] = df_hours['start_time_local'].apply(lambda x: parse_timestamp(x))
+  df_hours['end_time_local'] = df_hours['end_time_local'].apply(lambda x: parse_timestamp(x))
+
 
   # Merge DataFrames
   df = pd.merge(df_statuses, df_timezones, on='store_id', how='left', validate="many_to_many")
